@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LoL Ready Check Alert</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f111a">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #0f111a;
+    color: #eae6d8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 20px 60px;
+    text-align: center;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  p.sub { color: #8a8d9b; font-size: 14px; margin-top: 0; margin-bottom: 32px; }
+  .status {
+    width: 100%;
+    max-width: 420px;
+    padding: 16px;
+    border-radius: 14px;
+    background: #171a26;
+    border: 1px solid #262a3b;
+    margin-bottom: 20px;
+    font-size: 15px;
+  }
+  .status.ok { border-color: #c89b3c; color: #c89b3c; }
+  .status.err { border-color: #c34848; color: #e0837f; }
+  button {
+    background: #c89b3c;
+    color: #0f111a;
+    border: none;
+    padding: 14px 28px;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    max-width: 420px;
+  }
+  button:disabled { opacity: 0.5; }
+  .box {
+    width: 100%;
+    max-width: 420px;
+    margin-top: 24px;
+    text-align: left;
+  }
+  textarea {
+    width: 100%;
+    height: 160px;
+    background: #171a26;
+    color: #8ee7b0;
+    border: 1px solid #262a3b;
+    border-radius: 10px;
+    font-family: monospace;
+    font-size: 11px;
+    padding: 10px;
+    resize: none;
+  }
+  .copybtn {
+    margin-top: 10px;
+    background: #262a3b;
+    color: #eae6d8;
+  }
+  .steps {
+    text-align: left;
+    max-width: 420px;
+    font-size: 13px;
+    color: #8a8d9b;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+  <h1>🎮 LoL Ready Check Alert</h1>
+  <p class="sub">Notificaciones cuando aparece el ready check</p>
+
+  <div id="status" class="status">Toca el botón para activar las notificaciones.</div>
+
+  <button id="activateBtn">Activar notificaciones</button>
+
+  <div id="subscriptionBox" class="box" style="display:none;">
+    <p><strong>Paso 2:</strong> copia todo este texto y pégalo en el archivo <code>config.json</code> de tu PC (reemplaza el valor de <code>subscription_info</code>):</p>
+    <textarea id="subscriptionText" readonly></textarea>
+    <button class="copybtn" id="copyBtn">Copiar al portapapeles</button>
+  </div>
+
+  <script>
+    const VAPID_PUBLIC_KEY = "BIDDPGjQ7cl9o4nsF5VRBYkr4UA_bhRrIPipDGBbG64t5fS3uj3fjDj_3ueC2jDA2GStE0cnh5rSiJKHyULYf6w";
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = atob(base64);
+      return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+    }
+
+    const statusEl = document.getElementById('status');
+    const btn = document.getElementById('activateBtn');
+    const box = document.getElementById('subscriptionBox');
+    const textEl = document.getElementById('subscriptionText');
+
+    function setStatus(msg, cls) {
+      statusEl.textContent = msg;
+      statusEl.className = 'status' + (cls ? ' ' + cls : '');
+    }
+
+    async function activate() {
+      btn.disabled = true;
+      try {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+          setStatus('Tu navegador no soporta notificaciones push. En iPhone, abre esta página en Safari y agrégala a la pantalla de inicio primero.', 'err');
+          btn.disabled = false;
+          return;
+        }
+
+        const reg = await navigator.serviceWorker.register('service-worker.js');
+        await navigator.serviceWorker.ready;
+
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          setStatus('No diste permiso de notificaciones. Actívalo en Ajustes > Notificaciones para poder recibir avisos.', 'err');
+          btn.disabled = false;
+          return;
+        }
+
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+          });
+        }
+
+        setStatus('✅ ¡Notificaciones activadas! Copia el texto de abajo al PC.', 'ok');
+        textEl.value = JSON.stringify(sub.toJSON(), null, 2);
+        box.style.display = 'block';
+      } catch (err) {
+        setStatus('Error activando notificaciones: ' + err.message, 'err');
+      }
+      btn.disabled = false;
+    }
+
+    btn.addEventListener('click', activate);
+
+    document.getElementById('copyBtn').addEventListener('click', async () => {
+      await navigator.clipboard.writeText(textEl.value);
+      const b = document.getElementById('copyBtn');
+      b.textContent = '¡Copiado!';
+      setTimeout(() => b.textContent = 'Copiar al portapapeles', 1500);
+    });
+
+    // Si ya estaba suscrito antes, mostramos el estado
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration().then(async (reg) => {
+        if (reg) {
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) {
+            setStatus('✅ Ya tienes notificaciones activadas en este dispositivo.', 'ok');
+            textEl.value = JSON.stringify(sub.toJSON(), null, 2);
+            box.style.display = 'block';
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
